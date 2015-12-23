@@ -259,9 +259,11 @@ class DB{
     //确认信息数组是array
     if( is_array( $datas ) ){
       
-      foreach( $data as $key => $value ){
-        
-        *****************************************************
+      foreach( $datas as $key => $value ){
+      
+        echo $key,'===',$value,'<hr>';
+          
+        **********************************
       
       }
 
