@@ -610,6 +610,48 @@ class DB{
      return $where_clause;
    }
 
+
+  /**
+   *
+   * column_push
+   * 字段处理
+   * 
+   **/
+   public function column_push( $columns ){
+
+     //如果字段为*
+     if( $columns == '*'){
+       return $columns;
+     }
+
+     //如果是字符串
+     if( is_string( $columns ) ){
+       //转数组
+       $columns = array( $columns );
+     }
+
+     //存储堆
+     $stack = array();
+
+     foreach( $columns as $key => $value ){
+
+       //匹配valuer 
+      preg_match( '/([a-zA-Z0-9_\-\.]*)\s*\(([a-zA-Z0-9_\-]*)\)/i' , $value , $macth  );
+
+       if( isset( $macth[ 1 ] , $macth[ 2 ] ) ){
+         //如果是string1(string2)
+         //转变成 "string1" AS "string2" 
+         array_push( $stack , $this->column_quote( $macth[ 1 ] ).' AS '.$this->column_quote( $macth[ 2 ] ) );
+       }else{
+         //如果是string1
+         array_push( $stack, $this->column_quote( $value ) );
+       }
+     }
+
+     //将数组中的值用，分割输出成字符串
+     return implode( $stack, ',' );
+   }
+
   /**
    *
    * data_implode
@@ -799,26 +841,129 @@ class DB{
    *
    * select_context
    *
-   * 查询数据表
+   * 查询语句组合
    *
-   * @param   $table    查询的表名
-   * @param   $join   
-   * @param   $columns  查询的行数  default null
-   * @param   $where    查询的条件  default null
-   * @param   $fn       查询的条件  default null
+   * @param   $table    string    查询的表名
+   * @param   $columns  str|arr   查询的字段  default null
+   * @param   $where    str|arr   查询的条件  default null
+   * @param   $join     str|arr   关联字段
+   * @param   $fn       string    SQL使用的fn default null
    *
    **/
 
-  protected function select_context( $table,$join,$columns = null,$where = null,$column_fn ){
+  public function select_context( $table, $column = null, $where = null, $join = null, $column_fn = null ){
 
-    $table  = $this->prefix == ''?'"'.$table.'"':'"'. $this->prefix .$table .'"';
+    // table name
+    $table      = '"'. $this->prefix . $table .'"';
 
+    // 获取关联查询的联接 keys
+    $join_keys  = is_array( $join ) ? array_keys( $join ) : null;
+
+    var_dump(  $join_keys );
+
+    if( isset( $join_keys[ 0 ] ) && strpos( $join_keys[ 0 ] , ' [ ' ) === 0 ){
+    
+      $table_join = array();
+
+      //定义一组联接表示符
+      $join_array = array(
+        '>' => 'LEFT',
+        '<' => 'RIGHT',
+        '<>'=> 'FULL',
+        '><'=> 'INNER'  //包含在内
+      );
+
+      foreach( $join as $key => $value ){
+
+        //匹配key是否含 [<|>|<>|><]string(string)
+        preg_match( '/(\[(\<|\>|\>\<|\<\>)\]?([a-zA-Z0-9_\-]*)\s?(\(([a-zA-Z0-9_\-]*)\))?/', $key , $match );
+
+        //如果两个string不等于空
+        if( $match[ 2 ] != '' && $match[ 3 ] != '' ){
+
+
+          //如果value 是 string 
+          //拼接value
+          if( is_string( $value )){
+            $value = 'USING ("' . $value . '")';
+          }
+
+          //如果value是array
+          if( is_array( $value )){
+
+            if( isset( $value[ 0 ]) ){
+
+              //以,拼接 $value 
+              $value = 'USING ("' . implode( $value , '", "' ) . '")';
+            }else{
+
+              $joins = array();
+              //
+              foreach( $value as $keys => $values ){
+                $joins[] = (
+                  strpos( $keys , '.') > 0 ?
+                    '"'.str_replace( '.' , '"."' , $keys) . '"':
+                    $table . '."' . $keys . '"'
+                    
+                  ). ' = '.
+                  '"'.( isset( $match[ 5 ]) ? $match[ 5 ] : $match[ 3 ] ).'"."'.$values.'"';
+              }
+
+              $value = ' ON '. implode( $joins, ' AND' );
+            }
+          }
+          
+          $table_join[] = $join_array[ $match[ 2 ] ]. ' JOIN "'.$macth[ 3 ].'" '.(isset( $macth[ 5 ]) ? 'AS "'.$macth[ 5 ] . '" ' : '' ).$value;
+      }
+    }
+  
+
+    $table .= ' '. implode( $table_join,' ');
+
+    var_dump( $table );
 
   
+    }
+    if( ( isset( $column_fn ) ) ){
+
+      if( $column_fn == 1 ){
+      
+        $column = '1';
+      }else{
+
+        $column = $column_fn . '(' . $this->column_push( $column ) . ')';
+      }
+    }else{
+
+      //将column传到 column_push 方法中进行拼接
+      $column = $this->column_push( $column );
+    }
+
+    return ' SELECT ' . $column . ' FROM '.$table . $this->where_clause( $where );
   }
 
+  /**
+   *
+   * get()
+   *
+   * 从表中查询出一条数据
+   *
+   * @param   $table    查询的表名
+   * @param   $join     联接
+   * @param   $columns  查询的字段
+   * @param   $where    查询的条件
+   *
+   * 查询的字段可以是一个或多个 多个必须要使用array 
+   *
+   **/
+  public function get( $table, $join = null , $columns = null , $where = null ){
 
-  //public function
+    $query = $this->query( $this->select_context( $table, $join, $column, $where ) . 'LIMIT 1' );
+
+    var_dump( $query );
+  
+  
+  }
 
 
   /**
