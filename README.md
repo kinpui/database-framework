@@ -53,3 +53,33 @@
 
 
 ####配置使用
+配置连接数据库
+```php
+//完成初始化数据库
+$database = new DB(array(
+  'database_type' => 'mysql',
+  'database_name' => 'test',
+  'server'        => 'localhost',
+  'username'      => 'root',
+  'password'      => '123456',
+  'charset'       => 'utf8'
+  
+  //可选的参数
+  //端口号
+  'port'          => '3306',
+  
+  //数据表前缀
+  'prefix'        => 'test_',
+  
+  //连接参数扩展
+  'option'        => 'array( PDO::ATTR_CASE => PDO::CASE_NATURAL )';
+  
+  
+  
+));
+
+
+
+```
+
+
