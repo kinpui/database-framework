@@ -227,6 +227,7 @@ class DB{
         $where  
       )
     );
+    //end (selete)
 
     //返回query
     return $query ? $query->fetchAll(
@@ -235,7 +236,7 @@ class DB{
   
   }
 
-   //**** select_context
+   //**** insert
 
   /**
    *
@@ -325,6 +326,7 @@ class DB{
     }
   }
 
+  //end ( insert 查询方法 )
 
   /**
    *
@@ -342,11 +344,76 @@ class DB{
 
    public function delete( $table,$where ){
 
-     $sql = 'DELETE FROM `'.$this->prefix .$table . '` '.$this->where_clause( $where );
-     echo $sql;
+     return $this->exec( 'DELETE FROM `'.$this->prefix .$table . '` '.$this->where_clause( $where ) );
    }
 
-  //end ( select 查询方法 )
+  //end ( delete 删除方法 )
+
+  /**
+   *
+   * update
+   * 更新记录
+   *
+   * @param $table  string  表名
+   * @param $data   array   更新的数据
+   * @param $where  array   删除的条件
+   *
+   **/
+
+  public function update( $table, $data, $where = null ){
+  
+    $fields = array();
+
+    if( is_array( $data ) ){
+
+      foreach( $data as $key => $value ){
+
+        //匹配  [string]string[+-*/]
+        preg_match( '/([\w]+)(\[(\+|\-|\*|\/)\])?/i', $key, $match );
+
+        echo '<hr style="background:red">';
+        var_dump( $match );
+        echo '<hr style="background:red">';
+
+        if( isset( $match[ 3 ] ) ){
+
+          //如果包含操作符号且 value 为数字
+          if( is_numeric( $value ) ){
+            $fields[] = $this->column_quote( $match[ 1 ] ) . ' = ' . $this->column_quote( $match[ 1 ] ) . ' ' . $match[ 3 ] . ' ' . $value;
+          }
+        }else{
+
+          //没有操作符
+          $column = $this->column_quote( $key );
+
+          //获取value的类型
+          switch( gettype( $value ) ){
+          
+            case 'NULL'   :
+              $fields[] = $column . ' = NULL ';
+              break;
+            case 'boolean':
+              $fields[] = $column . ' = ' . ( $value ? '1' : '0' );
+              break;
+            case 'array'  :
+              preg_match( '/\(JSON\)\s*([\w]+)/i', $key, $column_match );
+              $fields[] = $column . ' = ' . $this->quote( isset( $column_match[ 0 ]) ? json_encode( $value ) : serialize( $value ) );
+
+              break;
+
+            case 'integer':
+            case 'double':
+            case 'string':
+              $fields[] = $column . ' = ' . $this->fn_quote( $key , $value );
+              break;
+          }
+        }
+      }
+
+      return $this->exec( 'UPDATE "' . $this->prefix . $table . '" SET '. implode( ',' , $fields) . $this->where_clause( $where ) );
+    }
+  }
+  //end (upadte)
 
   /**
    *
@@ -365,6 +432,7 @@ class DB{
     return $this->pdo->exec( $sql );
   
   }
+  //end (exec)
 
   /**
    *
@@ -386,6 +454,7 @@ class DB{
      **/
 		return '"' . str_replace('.', '"."', preg_replace('/(^#|\(JSON\)\s*)/', '', $string)) . '"';
 	}
+  //end column_quote
 
   /**
    *
@@ -416,6 +485,8 @@ class DB{
     }
   
   }
+  //end (array_quote)
+
 
 
   /**
@@ -468,6 +539,7 @@ class DB{
             $string:
             $this->quote( $string );
   }
+  //end (fn_quote)
 
   /**
    *
@@ -610,6 +682,8 @@ class DB{
      return $where_clause;
    }
 
+  //end (where_clause)
+
 
   /**
    *
@@ -636,12 +710,12 @@ class DB{
      foreach( $columns as $key => $value ){
 
        //匹配valuer 
-      preg_match( '/([a-zA-Z0-9_\-\.]*)\s*\(([a-zA-Z0-9_\-]*)\)/i' , $value , $macth  );
+      preg_match( '/([a-zA-Z0-9_\-\.]*)\s*\(([a-zA-Z0-9_\-]*)\)/i' , $value , $match  );
 
-       if( isset( $macth[ 1 ] , $macth[ 2 ] ) ){
+       if( isset( $match[ 1 ] , $match[ 2 ] ) ){
          //如果是string1(string2)
          //转变成 "string1" AS "string2" 
-         array_push( $stack , $this->column_quote( $macth[ 1 ] ).' AS '.$this->column_quote( $macth[ 2 ] ) );
+         array_push( $stack , $this->column_quote( $match[ 1 ] ).' AS '.$this->column_quote( $match[ 2 ] ) );
        }else{
          //如果是string1
          array_push( $stack, $this->column_quote( $value ) );
@@ -694,15 +768,15 @@ class DB{
 
            //匹配以#开头
            //匹配包括 > , < , <= , => , ! , <> 等操作符号
-           preg_match( '/(#?)([\w\.\-]+)(\[(\>|\>\=|\<|\<\=|\!|\<\>|\!?~)\])?/i' , $key , $macth );
+           preg_match( '/(#?)([\w\.\-]+)(\[(\>|\>\=|\<|\<\=|\!|\<\>|\!?~)\])?/i' , $key , $match );
 
            //过滤字符
-           $column = $this->column_quote( $macth[ 2 ] );
+           $column = $this->column_quote( $match[ 2 ] );
 
-           if( isset( $macth[ 4 ] ) )
+           if( isset( $match[ 4 ] ) )
            {
              //取得运算符
-             $operator = $macth[ 4 ];
+             $operator = $match[ 4 ];
 
              //判断预算法是否等于 !
              if( $operator == '!' ){
@@ -853,13 +927,18 @@ class DB{
 
   public function select_context( $table, $column = null, $where = null, $join = null, $column_fn = null ){
 
+    //如果没有表名的话
+    //直接退出吧
+    if( $table == '' ){
+      return false;
+    }
     // table name
     $table      = '"'. $this->prefix . $table .'"';
 
     // 获取关联查询的联接 keys
     $join_keys  = is_array( $join ) ? array_keys( $join ) : null;
 
-    var_dump(  $join_keys );
+    //var_dump(  $join_keys );
 
     if( isset( $join_keys[ 0 ] ) && strpos( $join_keys[ 0 ] , ' [ ' ) === 0 ){
     
@@ -913,7 +992,7 @@ class DB{
             }
           }
           
-          $table_join[] = $join_array[ $match[ 2 ] ]. ' JOIN "'.$macth[ 3 ].'" '.(isset( $macth[ 5 ]) ? 'AS "'.$macth[ 5 ] . '" ' : '' ).$value;
+          $table_join[] = $join_array[ $match[ 2 ] ]. ' JOIN "'.$match[ 3 ].'" '.(isset( $match[ 5 ]) ? 'AS "'.$match[ 5 ] . '" ' : '' ).$value;
       }
     }
   
@@ -943,7 +1022,7 @@ class DB{
   }
 
   /**
-   *
+   * // 未完
    * get()
    *
    * 从表中查询出一条数据
@@ -960,11 +1039,189 @@ class DB{
 
     $query = $this->query( $this->select_context( $table, $join, $column, $where ) . 'LIMIT 1' );
 
-    var_dump( $query );
-  
+    if( $query ){
+      
+      $data = $query-fetchAll( PDO::FETCH_ASSOC );
+
+      if( isset( $data[ 0 ] ) ){
+        $column = $where == null ? $join :$column;
+
+        //如果是不是查询所有字段
+        if( is_string( $column ) && $column != '*' ){
+
+          return $data[ 0 ][ $column ];
+
+        }else{
+
+          return $data[ 0 ];
+        }
+      }
+    }else{
+
+      return false;
+    }
+  }
+  // end ( get )
+
+
+  /**
+   *
+   * has
+   * 确定数据是否存在
+   *
+   * @param   $table  数据表的名
+   * @param   $join   多表查询连接
+   * @param   $where  条件
+   *
+   **/
+  public function has( $table , $join , $where ){
+    
+    $column = null;
+
+    //运行sql 语句
+    $query = $this->query( 'SELECT EXISTS( ' . $this->select_context( $table, $join, $column, $where, 1 ) .' ) ' );
+
+    return $query ? 0 + $query->fetchColumn() : false;
   
   }
+  //end (has)
 
+  /**
+   *
+   * count
+   * 获取数据表中的行数
+   *
+   * @param   $table  数据表名
+   * @param   $join   多表查询连接
+   * @param   $column 查询的字段
+   * @param   $where  查询的条件
+   *
+   **/
+
+  public function count( $table, $join = null , $column = null , $where = null ){
+
+    //使用count 数据库函数
+    $query = $this->query( $this->select_context( $table , $join , $column , $where , 'COUNT') );
+    return $query ? $query->fetchColumn() === '1':false;
+  }
+  //end (count)
+
+  /**
+   *
+   * max
+   * 获得数据表中，值最大的
+   *
+   * @param   $table  数据表名
+   * @param   $join   多表查询连接
+   * @param   $column 查询的字段
+   * @param   $where  查询的条件
+   *
+   **/
+
+  public function max( $table, $join = null , $column = null , $where = null ){
+
+    //使用count 数据库函数
+    $query = $this->query( $this->select_context( $table , $join , $column , $where , 'MAX') );
+
+    if( $query ){
+      $max = $query->fetchColumn();
+      return is_numeric( $max ) ? $max+0 : $max;
+    }else{
+      return false;
+    }
+  }
+  //end (max)
+
+  /**
+   *
+   * min
+   * 获得数据表中，值最小的
+   *
+   * @param   $table  数据表名
+   * @param   $join   多表查询连接
+   * @param   $column 查询的字段
+   * @param   $where  查询的条件
+   *
+   **/
+
+  public function min( $table, $join = null , $column = null , $where = null ){
+
+    //使用count 数据库函数
+    $query = $this->query( $this->select_context( $table , $join , $column , $where , 'MIN') );
+
+    if( $query ){
+      $min = $query->fetchColumn();
+      return is_numeric( $min ) ? $min + 0 : $min;
+    }else{
+      return false;
+    }
+  }
+  //end (min)
+
+  /**
+   * avg
+   * 获得某个列字段的平均值
+   *
+   * @param   $table  数据表名
+   * @param   $join   多表查询连接
+   * @param   $column 查询的字段
+   * @param   $where  查询的条件
+   *
+   **/
+  public function avg(){
+
+    $query = $this->query( $this->select_context( $table, $join, $column, $where, 'AVG' ) );
+
+    return $query ? 0 + $query->fetchColumn() : false;
+  }
+  //end (avg)
+
+  /**
+   * sum
+   * 获得某个列字段相加
+   *
+   * @param   $table  数据表名
+   * @param   $join   多表查询连接
+   * @param   $column 查询的字段
+   * @param   $where  查询的条件
+   *
+   **/
+  public function sum(){
+
+    $query = $this->query( $this->select_context( $table, $join, $column, $where, 'SUM' ) );
+
+    return $query ? 0 + $query->fetchColumn() : false;
+  }
+  //end (sum)
+
+  /**
+   *
+   * action
+   * 启动一个事务
+   *
+   * @param $actions 事务内执行的方法.
+   *
+   **/
+
+  public function action( $actions ){
+
+    if( is_callable( $actions ) ){
+      
+      $this->pdo->beginTransaction();
+
+      $result = $actions( $this );
+
+      if( $result === false ){
+        $this->pdo->rollBack();
+      }else{
+        $this->pdo->commit();
+      }
+    }else{
+      
+      return false;
+    }
+  }
+  //end (action)
 
   /**
    *
@@ -1007,7 +1264,6 @@ class DB{
   
   }
 
-  //log
   /**
    *
    * log
@@ -1055,7 +1311,6 @@ class DB{
     echo '出错的sql语句:',$this->last_query();
 
   }
-
 
   //database info
 
